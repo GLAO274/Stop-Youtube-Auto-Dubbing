@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stop YouTube Auto-Dubbing</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      width: 360px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-size: 13px;
+      color: #e0e0e0;
+      background: #1a1a1a;
+    }
+    .header {
+      background: #2d2d2d;
+      padding: 10px 15px;
+      border-bottom: 1px solid #3d3d3d;
+    }
+    .header h1 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: #f0f0f0;
+    }
+    .domain {
+      font-size: 11px;
+      color: #a0a0a0;
+      word-break: break-all;
+    }
+    .content {
+      padding: 15px;
+    }
+    .toggle-section {
+      background: #2d2d2d;
+      border: 1px solid #3d3d3d;
+      border-radius: 6px;
+      padding: 12px 15px;
+      margin-bottom: 10px;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .toggle-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #e0e0e0;
+    }
+    .toggle-switch {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      background: #555;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .toggle-switch.active {
+      background: #5a9fd4;
+    }
+    .toggle-switch::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: white;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.3s;
+    }
+    .toggle-switch.active::before {
+      transform: translateX(20px);
+    }
+    .info-section {
+      background: #2d2d2d;
+      border: 1px solid #3d3d3d;
+      border-radius: 6px;
+      padding: 12px 15px;
+    }
+    .info-section h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f0f0f0;
+      margin-bottom: 10px;
+    }
+    .info-section ul {
+      list-style: none;
+      padding: 0;
+    }
+    .info-section li {
+      padding: 4px 0;
+      font-size: 12px;
+      color: #a0a0a0;
+      display: flex;
+      align-items: center;
+    }
+    .info-section li::before {
+      content: '✓';
+      color: #5a9fd4;
+      margin-right: 8px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Stop YouTube Auto-Dubbing</h1>
+    <div class="domain">youtube.com</div>
+  </div>
+  
+  <div class="content">
+    <div class="toggle-section">
+      <div class="toggle-row">
+        <span class="toggle-label">Extension Enabled</span>
+        <div class="toggle-switch active" id="toggleSwitch"></div>
+      </div>
+    </div>
+    
+    <div class="info-section">
+      <h3>Active Features</h3>
+      <ul>
+        <li>Prevents auto-dubbing</li>
+        <li>Shows original titles</li>
+        <li>Shows original descriptions</li>
+      </ul>
+    </div>
+  </div>
+  
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      const toggleSwitch = document.getElementById('toggleSwitch');
+
+      // Load current state
+      chrome.storage.sync.get(['enabled'], function(result) {
+        const enabled = result.enabled !== false;
+        updateUI(enabled);
+      });
+
+      // Handle toggle clicks
+      toggleSwitch.addEventListener('click', function() {
+        const isActive = toggleSwitch.classList.contains('active');
+        const newState = !isActive;
+        
+        chrome.storage.sync.set({ enabled: newState }, function() {
+          updateUI(newState);
+          
+          // Notify YouTube tabs
+          chrome.tabs.query({ url: '*://*.youtube.com/*' }, function(tabs) {
+            tabs.forEach(tab => {
+              chrome.tabs.sendMessage(tab.id, {
+                action: 'toggleEnabled',
+                enabled: newState
+              }).catch(() => {});
+            });
+          });
+        });
+      });
+
+      function updateUI(enabled) {
+        if (enabled) {
+          toggleSwitch.classList.add('active');
+        } else {
+          toggleSwitch.classList.remove('active');
+        }
+      }
+    });
+  </script>
+</body>
+</html>
