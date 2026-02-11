@@ -84,6 +84,7 @@
       border: 1px solid #3d3d3d;
       border-radius: 6px;
       padding: 12px 15px;
+      margin-bottom: 10px;
     }
     .info-section h3 {
       font-size: 13px;
@@ -103,10 +104,30 @@
       align-items: center;
     }
     .info-section li::before {
-      content: 'âœ“';
+      content: '✓';
       color: #5a9fd4;
       margin-right: 8px;
       font-weight: bold;
+    }
+    .status {
+      background: #2d2d2d;
+      border: 1px solid #3d3d3d;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 11px;
+      color: #888;
+    }
+    .status.success {
+      color: #5a9fd4;
+    }
+    .status.error {
+      color: #d45a5a;
+    }
+    .debug {
+      margin-top: 5px;
+      font-size: 10px;
+      font-family: monospace;
+      color: #666;
     }
   </style>
 </head>
@@ -132,57 +153,99 @@
         <li>Shows original descriptions</li>
       </ul>
     </div>
+
+    <div class="status" id="status">Ready</div>
   </div>
   
   <script>
-    document.addEventListener('DOMContentLoaded', function() {
-      const toggleSwitch = document.getElementById('toggleSwitch');
+    const toggleSwitch = document.getElementById('toggleSwitch');
+    const statusEl = document.getElementById('status');
 
-      // Load current state
-      chrome.storage.sync.get(['enabled'], function(result) {
-        const enabled = result.enabled !== false;
-        updateUI(enabled);
-      });
+    function setStatus(message, type = '') {
+      statusEl.textContent = message;
+      statusEl.className = 'status ' + type;
+      console.log('[Popup]', message);
+    }
 
-      // Handle toggle clicks
-      toggleSwitch.addEventListener('click', function() {
-        const isActive = toggleSwitch.classList.contains('active');
-        const newState = !isActive;
+    function updateUI(enabled) {
+      if (enabled) {
+        toggleSwitch.classList.add('active');
+      } else {
+        toggleSwitch.classList.remove('active');
+      }
+      setStatus(enabled ? 'Extension is ON' : 'Extension is OFF', 'success');
+    }
+
+    // Load current state on popup open
+    chrome.storage.sync.get(['enabled'], function(result) {
+      if (chrome.runtime.lastError) {
+        console.error('[Popup] Error loading state:', chrome.runtime.lastError);
+        setStatus('Error loading state', 'error');
+        return;
+      }
+      
+      const enabled = result.enabled !== false; // Default to true
+      console.log('[Popup] Loaded state:', enabled);
+      updateUI(enabled);
+    });
+
+    // Handle toggle clicks
+    toggleSwitch.addEventListener('click', function() {
+      const isCurrentlyActive = toggleSwitch.classList.contains('active');
+      const newState = !isCurrentlyActive;
+      
+      console.log('[Popup] Toggle clicked, changing to:', newState);
+      setStatus('Saving...', '');
+      
+      // Save the new state
+      chrome.storage.sync.set({ enabled: newState }, function() {
+        if (chrome.runtime.lastError) {
+          console.error('[Popup] Error saving:', chrome.runtime.lastError);
+          setStatus('Error saving state', 'error');
+          return;
+        }
         
-        // Save state
-        chrome.storage.sync.set({ enabled: newState }, function() {
-          console.log('Extension state saved:', newState);
-          updateUI(newState);
+        console.log('[Popup] State saved successfully:', newState);
+        updateUI(newState);
+        
+        // Find and notify YouTube tabs
+        chrome.tabs.query({ url: '*://*.youtube.com/*' }, function(tabs) {
+          if (chrome.runtime.lastError) {
+            console.error('[Popup] Error querying tabs:', chrome.runtime.lastError);
+            return;
+          }
           
-          // Notify all YouTube tabs
-          chrome.tabs.query({ url: '*://*.youtube.com/*' }, function(tabs) {
-            if (tabs && tabs.length > 0) {
-              tabs.forEach(tab => {
-                chrome.tabs.sendMessage(tab.id, {
-                  action: 'toggleEnabled',
-                  enabled: newState
-                }, function(response) {
-                  // Handle response or error silently
-                  if (chrome.runtime.lastError) {
-                    console.log('Tab not ready:', chrome.runtime.lastError.message);
-                  } else {
-                    console.log('Tab notified:', tab.id);
+          if (!tabs || tabs.length === 0) {
+            console.log('[Popup] No YouTube tabs found');
+            setStatus(newState ? 'ON - Open YouTube to activate' : 'OFF', 'success');
+            return;
+          }
+          
+          console.log('[Popup] Found', tabs.length, 'YouTube tabs');
+          let notified = 0;
+          
+          tabs.forEach(function(tab) {
+            chrome.tabs.sendMessage(
+              tab.id,
+              { action: 'toggleEnabled', enabled: newState },
+              function(response) {
+                if (chrome.runtime.lastError) {
+                  console.log('[Popup] Tab', tab.id, 'not ready:', chrome.runtime.lastError.message);
+                } else {
+                  notified++;
+                  console.log('[Popup] Tab', tab.id, 'notified successfully');
+                  if (notified === tabs.length) {
+                    setStatus(newState ? 'ON - Refresh YouTube' : 'OFF - Refresh YouTube', 'success');
                   }
-                });
-              });
-            }
+                }
+              }
+            );
           });
         });
       });
-
-      function updateUI(enabled) {
-        if (enabled) {
-          toggleSwitch.classList.add('active');
-        } else {
-          toggleSwitch.classList.remove('active');
-        }
-      }
     });
+
+    console.log('[Popup] Script loaded');
   </script>
 </body>
 </html>
