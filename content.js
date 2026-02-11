@@ -8,11 +8,14 @@
   // Configuration
   let isEnabled = true;
   let originalData = {};
+  let isInitialized = false;
 
   // Load settings from storage
   chrome.storage.sync.get(['enabled'], function(result) {
     isEnabled = result.enabled !== false;
-    if (isEnabled) {
+    console.log('[Stop YouTube Auto-Dubbing] Extension enabled:', isEnabled);
+    if (isEnabled && !isInitialized) {
+      isInitialized = true;
       init();
     }
   });
@@ -31,73 +34,53 @@
   // Prevent auto-dubbing by selecting original audio track
   function monitorAudioTracks() {
     const checkAudioTrack = () => {
+      if (!isEnabled) return;
+
       const video = document.querySelector('video');
       if (!video) return;
 
-      // Wait for player to be ready
-      const player = document.querySelector('#movie_player');
-      if (!player) return;
-
       try {
-        // Check if there are multiple audio tracks
-        const audioTracks = video.audioTracks;
-        if (audioTracks && audioTracks.length > 1) {
-          // Find the original track
-          for (let i = 0; i < audioTracks.length; i++) {
-            const track = audioTracks[i];
-            // Enable the first track or the one that seems original
-            if (i === 0 || !track.label.toLowerCase().includes('dub')) {
+        // Check if there are multiple audio tracks using the audioTracks API
+        if (video.audioTracks && video.audioTracks.length > 1) {
+          console.log('[Stop YouTube Auto-Dubbing] Found', video.audioTracks.length, 'audio tracks');
+          
+          // Find and enable the original track
+          // The first track is usually the original
+          for (let i = 0; i < video.audioTracks.length; i++) {
+            const track = video.audioTracks[i];
+            
+            // Enable the first track (original)
+            if (i === 0) {
               if (!track.enabled) {
-                console.log('[Stop YouTube Auto-Dubbing] Switching to original audio track:', track.label);
+                console.log('[Stop YouTube Auto-Dubbing] Enabling original track:', track.label || 'Track 0');
                 track.enabled = true;
               }
-              break;
+            } else {
+              // Disable other tracks
+              if (track.enabled) {
+                console.log('[Stop YouTube Auto-Dubbing] Disabling dubbed track:', track.label || `Track ${i}`);
+                track.enabled = false;
+              }
             }
           }
         }
-
-        // Also check for YouTube's audio track settings menu
-        const settingsButton = document.querySelector('.ytp-settings-button');
-        if (settingsButton) {
-          // Handle this via YouTube's player API if available
-          checkYouTubePlayerAPI();
-        }
       } catch (e) {
-        console.error('[Stop YouTube Auto-Dubbing] Error checking audio tracks:', e);
+        // Silent fail - API might not be available
       }
     };
 
     // Check periodically
     setInterval(checkAudioTrack, 2000);
     
-    // Check immediately
+    // Check immediately after a delay
     setTimeout(checkAudioTrack, 1000);
-  }
-
-  // Use YouTube's player API to control audio tracks
-  function checkYouTubePlayerAPI() {
-    try {
-      const player = document.querySelector('#movie_player');
-      if (player && typeof player.getOption === 'function') {
-        // Get available audio tracks
-        const audioTracks = player.getOption('captions', 'audioTracks');
-        if (audioTracks && audioTracks.length > 0) {
-          // Select the original track (first one typically)
-          const currentTrack = player.getOption('captions', 'track');
-          if (currentTrack && currentTrack.languageCode && currentTrack.languageCode.includes('.')) {
-            // If it has a dot, it might be a dubbed version (e.g., "en.dub")
-            console.log('[Stop YouTube Auto-Dubbing] Detected dubbed track, switching to original');
-            player.setOption('captions', 'track', audioTracks[0]);
-          }
-        }
-      }
-    } catch (e) {
-      // API might not be available yet
-    }
+    setTimeout(checkAudioTrack, 3000);
   }
 
   // Function to fetch and restore original metadata
   function restoreOriginalMetadata() {
+    if (!isEnabled) return;
+
     const videoId = getVideoId();
     if (!videoId) return;
 
@@ -117,16 +100,15 @@
     return urlParams.get('v');
   }
 
-  // Fetch original metadata from YouTube without language parameters
+  // Fetch original metadata from YouTube's page data
   function fetchOriginalMetadata(videoId) {
-    // Try to get original data from YouTube's internal API
     try {
       // YouTube stores initial data in ytInitialData
-      if (window.ytInitialData) {
+      if (typeof window.ytInitialData !== 'undefined') {
         const data = window.ytInitialData;
         const videoData = findVideoData(data);
         
-        if (videoData) {
+        if (videoData && videoData.title) {
           const original = {
             title: videoData.title,
             description: videoData.description,
@@ -135,11 +117,13 @@
           
           originalData[videoId] = original;
           applyOriginalMetadata(original);
+          console.log('[Stop YouTube Auto-Dubbing] Found metadata in ytInitialData');
+          return;
         }
       }
 
-      // Also try to get from ytInitialPlayerResponse
-      if (window.ytInitialPlayerResponse) {
+      // Try ytInitialPlayerResponse
+      if (typeof window.ytInitialPlayerResponse !== 'undefined') {
         const playerData = window.ytInitialPlayerResponse;
         if (playerData.videoDetails) {
           const original = {
@@ -150,10 +134,12 @@
           
           originalData[videoId] = original;
           applyOriginalMetadata(original);
+          console.log('[Stop YouTube Auto-Dubbing] Found metadata in ytInitialPlayerResponse');
+          return;
         }
       }
     } catch (e) {
-      console.error('[Stop YouTube Auto-Dubbing] Error fetching original metadata:', e);
+      console.log('[Stop YouTube Auto-Dubbing] Could not fetch original metadata:', e.message);
     }
 
     // Try to remove translation parameters from URLs
@@ -294,12 +280,24 @@
 
   // Listen for messages from popup
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log('[Stop YouTube Auto-Dubbing] Received message:', request);
+    
     if (request.action === 'toggleEnabled') {
       isEnabled = request.enabled;
+      console.log('[Stop YouTube Auto-Dubbing] Toggled to:', isEnabled);
+      
       if (isEnabled) {
-        init();
+        if (!isInitialized) {
+          isInitialized = true;
+          init();
+        }
+        // Force refresh
+        restoreOriginalMetadata();
+        monitorAudioTracks();
       }
+      
       sendResponse({ success: true });
+      return true; // Keep message channel open
     }
   });
 
