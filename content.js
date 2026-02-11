@@ -1,4 +1,4 @@
-// Stop YouTube Auto-Dubbing - Ultra-safe version
+// Prevents auto-dubbing and restores original titles/descriptions
 (function() {
   'use strict';
 
