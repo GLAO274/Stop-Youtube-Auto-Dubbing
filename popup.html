@@ -103,7 +103,7 @@
       align-items: center;
     }
     .info-section li::before {
-      content: '✓';
+      content: 'âœ“';
       color: #5a9fd4;
       margin-right: 8px;
       font-weight: bold;
@@ -149,17 +149,28 @@
         const isActive = toggleSwitch.classList.contains('active');
         const newState = !isActive;
         
+        // Save state
         chrome.storage.sync.set({ enabled: newState }, function() {
+          console.log('Extension state saved:', newState);
           updateUI(newState);
           
-          // Notify YouTube tabs
+          // Notify all YouTube tabs
           chrome.tabs.query({ url: '*://*.youtube.com/*' }, function(tabs) {
-            tabs.forEach(tab => {
-              chrome.tabs.sendMessage(tab.id, {
-                action: 'toggleEnabled',
-                enabled: newState
-              }).catch(() => {});
-            });
+            if (tabs && tabs.length > 0) {
+              tabs.forEach(tab => {
+                chrome.tabs.sendMessage(tab.id, {
+                  action: 'toggleEnabled',
+                  enabled: newState
+                }, function(response) {
+                  // Handle response or error silently
+                  if (chrome.runtime.lastError) {
+                    console.log('Tab not ready:', chrome.runtime.lastError.message);
+                  } else {
+                    console.log('Tab notified:', tab.id);
+                  }
+                });
+              });
+            }
           });
         });
       });
