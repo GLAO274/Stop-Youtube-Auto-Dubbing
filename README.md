@@ -66,7 +66,11 @@ stop-youtube-auto-dubbing/
 - Disable other translation extensions
 
 ## Version
-1.0.0
+1.0.1
+
+## Changelog
+- **1.0.1**: Better permission handling; Better error handling; Fix the toggle
+- **1.0.0**: Base function
 
 ---
 
