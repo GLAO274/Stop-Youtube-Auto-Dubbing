@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Stop YouTube Auto-Dubbing",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Stops YouTube from auto-dubbing videos and using translated titles/descriptions. Shows original content only.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs", "activeTab"],
   "host_permissions": ["*://*.youtube.com/*"],
   "content_scripts": [
     {
