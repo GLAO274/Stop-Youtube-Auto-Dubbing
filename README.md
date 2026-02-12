@@ -43,12 +43,14 @@ This happens automatically 2 seconds after each video loads.
 
 ### Title & Description Restoration
 
-The extension **fetches original metadata** and replaces translated content in the DOM:
+The extension **extracts original metadata from the page and YouTube's API**, then actively maintains it:
 
-1. Detects if title/description is translated (checks for non-ASCII characters)
-2. Fetches original metadata from YouTube's internal API
-3. Replaces translated title with original language title
-4. Replaces translated description with original language description
+1. **Title**: Extracted instantly from schema.org meta tags already present in the page
+2. **Description**: Fetched from YouTube's internal API for complete text (schema.org descriptions are truncated)
+3. Replaces translated content in the DOM with original language content
+4. **Actively monitors the page** with MutationObserver to prevent YouTube from reverting changes on hover or interaction
+
+This ensures the original title and description stay visible even when YouTube's reactive framework tries to re-apply translations.
 
 ## Supported Languages
 
@@ -87,7 +89,7 @@ const isOriginal =
   label.toLowerCase().includes('original') ||
   label.includes('オリジナル') || // Japanese
   label.includes('原文') ||  // Chinese Traditional
-  label.includes('原聲') ||  // Chinese Traditional 2
+  label.includes('原声') ||  // Chinese Traditional 2
   label.includes('原始') ||  // Chinese Simplified
   label.includes('원본');  // Korean
 ```
@@ -133,11 +135,12 @@ stop-youtube-auto-dubbing/
 
 ## Version
 
-1.1.1
+1.1.2
 
 ## Changelog
 
-- **1.1.1**: Complete rewrite; Auto-clicks settings menu to select original audio; Fetches and restores original title/description from YouTube API; Multi-language support (EN, JP, CN, KR); 
+- **1.1.2**: Fixed dark mode switching bug; Fixed mouse locking issue; Added processing lock to prevent race conditions; Fixed description persistence; Improved metadata fetching; Enhanced reliability with proper event-driven architecture
+- **1.1.1**: Complete rewrite; Auto-clicks settings menu to select original audio; Fetches and restores original title/description from YouTube API; Multi-language support (EN, JP, CN, KR)
 - **1.0.1**: Better permission handling; Better error handling; Fix the toggle; CSP compliance
 - **1.0.0**: Base function
 
