@@ -39,7 +39,7 @@ The extension **automatically opens the YouTube settings menu** and clicks throu
 3. Selects the original audio (not auto-dubbed)
 4. Closes the menu automatically
 
-This happens automatically 2 seconds after each video loads.
+This happens automatically 3 seconds after each video loads.
 
 ### Title & Description Restoration
 
@@ -65,7 +65,7 @@ The extension currently supports audio track detection in:
 
 If your YouTube interface is in a different language, you need to add translations in **TWO places** in `content.js`:
 
-**Place 1: Line ~260 - "Audio track" menu detection**
+**Place 1: "Audio track" menu detection**
 
 Find this section:
 ```javascript
@@ -81,7 +81,7 @@ Add a new line with your language's translation of "Audio track", for example:
     label.includes('votre_traduction')) {  // Your Language
 ```
 
-**Place 2: Line ~300 - "Original" audio detection**
+**Place 2: "Original" audio detection**
 
 Find this section:
 ```javascript
@@ -135,10 +135,11 @@ stop-youtube-auto-dubbing/
 
 ## Version
 
-1.1.2
+1.1.3
 
 ## Changelog
 
+- **1.1.3**: Fixed audio track switching issue
 - **1.1.2**: Fixed dark mode switching bug; Fixed mouse locking issue; Added processing lock to prevent race conditions; Fixed description persistence; Improved metadata fetching; Enhanced reliability with proper event-driven architecture
 - **1.1.1**: Complete rewrite; Auto-clicks settings menu to select original audio; Fetches and restores original title/description from YouTube API; Multi-language support (EN, JP, CN, KR)
 - **1.0.1**: Better permission handling; Better error handling; Fix the toggle; CSP compliance

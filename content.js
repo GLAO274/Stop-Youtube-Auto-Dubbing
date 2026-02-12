@@ -1,17 +1,15 @@
-// Stop YouTube Auto-Dubbing - v1.1.2
+// Stop YouTube Auto-Dubbing - v1.1.3
 (function() {
   'use strict';
 
   if (window.__stopYTAutoDubbing) return;
   window.__stopYTAutoDubbing = true;
 
-  console.log('[Stop YouTube Auto-Dubbing] v1.1.2 loaded');
-
   let isEnabled = true;
   let cookieSet = false;
   let hasClickedOnce = false;
   let lastVideoId = null;
-  let isProcessing = false; // Prevent overlapping operations
+  let isProcessing = false;
 
   function init() {
     chrome.storage.sync.get(['enabled'], function(result) {
@@ -22,7 +20,7 @@
         setupNavigationListener();
         setupAudioMonitor();
         
-        setTimeout(autoClickOriginalAudio, 2000);
+        setTimeout(autoClickOriginalAudio, 3000);
         waitForPlayerResponse();
       }
     });
@@ -82,6 +80,7 @@
       lastVideoId = null;
       originalDescription = null;
       originalTitle = null;
+      isProcessing = false;
       
       if (descriptionObserver) {
         descriptionObserver.disconnect();
@@ -90,21 +89,20 @@
       
       setPreferenceCookie();
       
-      setTimeout(autoClickOriginalAudio, 2000);
+      setTimeout(autoClickOriginalAudio, 3000);
       
       waitForPlayerResponse();
     });
   }
 
   function waitForPlayerResponse(attempts = 0) {
-    const maxAttempts = 6; // 6 attempts * 500ms = 3 seconds max
+    const maxAttempts = 6;
     
     if (attempts >= maxAttempts) {
       fixMetadata();
       return;
     }
     
-    // Check if schema.org meta tags exist
     const hasSchema = document.querySelector('meta[itemprop="name"]');
     
     if (hasSchema) {
@@ -132,7 +130,6 @@
     return null;
   }
 
-  // Extract original metadata from schema.org meta tags (fallback)
   function getSchemaMetadata() {
     try {
       const titleMeta = document.querySelector('meta[itemprop="name"]');
@@ -158,25 +155,20 @@
     lastVideoId = videoId;
 
     try {
-      // Get title from schema.org (fast and complete)
       const schemaData = getSchemaMetadata();
       const schemaTitle = schemaData?.title;
       
       if (schemaTitle) {
-        // Apply title immediately
         applyMetadata(schemaTitle, null);
         
-        // Update ytInitialPlayerResponse if it exists
         if (window.ytInitialPlayerResponse?.videoDetails) {
           window.ytInitialPlayerResponse.videoDetails.title = schemaTitle;
         }
       }
       
-      // Always fetch description from API (schema.org description is truncated)
       const original = await fetchOriginalMetadata(videoId);
       
       if (original) {
-        // Update ytInitialPlayerResponse if it exists
         if (window.ytInitialPlayerResponse?.videoDetails) {
           window.ytInitialPlayerResponse.videoDetails.title = original.title;
           window.ytInitialPlayerResponse.videoDetails.shortDescription = original.description;
@@ -185,7 +177,6 @@
         applyMetadata(original.title, original.description);
         console.log('[Stop YouTube Auto-Dubbing] ✓ Restored original metadata');
       } else if (schemaTitle) {
-        // If API fetch fails but we have schema title, use that
         applyMetadata(schemaTitle, null);
       }
     } catch (e) {
@@ -237,15 +228,12 @@
   let originalDescription = null;
   let originalTitle = null;
 
-  // ORIGINAL WORKING CODE with SAFE description fix
   function applyMetadata(title, description) {
     if (!title) return;
 
-    // Store originals for observer
     if (title) originalTitle = title;
     if (description) originalDescription = description;
 
-    // Fix title
     const titleSelectors = [
       'h1.ytd-watch-metadata yt-formatted-string',
       'h1.ytd-video-primary-info-renderer yt-formatted-string',
@@ -265,24 +253,20 @@
       document.title = title + ' - YouTube';
     }
 
-    // Fix description (BOTH collapsed snippet AND expanded full text)
     if (description) {
       updateDescriptionText(description);
     }
     
-    // Start watching for YouTube re-rendering the description
     startDescriptionObserver();
   }
 
   function updateDescriptionText(description) {
-    // Fix collapsed snippet 
     const snippetText = document.querySelector('#description-inline-expander #attributed-snippet-text .yt-core-attributed-string');
     if (snippetText && snippetText.textContent !== description.substring(0, 150)) {
       const shortDesc = description.length > 150 ? description.substring(0, 150) : description;
       snippetText.textContent = shortDesc;
     }
 
-    // Fix expanded description 
     const expandedText = document.querySelector('#description-inline-expander #expanded yt-attributed-string .yt-core-attributed-string');
     if (expandedText && expandedText.textContent !== description) {
       expandedText.textContent = description;
@@ -292,7 +276,6 @@
   let descriptionObserver = null;
 
   function startDescriptionObserver() {
-    // Stop existing observer
     if (descriptionObserver) {
       descriptionObserver.disconnect();
     }
@@ -315,23 +298,16 @@
     });
   }
 
-  // Auto-click settings menu to change audio
   function autoClickOriginalAudio() {
     if (!isEnabled || hasClickedOnce || isProcessing) return;
     
-    isProcessing = true; // Set processing flag
+    isProcessing = true;
 
     try {
       const settingsButton = document.querySelector('.ytp-settings-button');
       if (!settingsButton) {
         isProcessing = false;
-        return;
-      }
-
-      // Check if menu is already open
-      const existingPanel = document.querySelector('.ytp-panel-menu');
-      if (existingPanel && existingPanel.style.display !== 'none') {
-        processAudioMenu();
+        hasClickedOnce = true;
         return;
       }
 
@@ -345,10 +321,10 @@
           const label = item.textContent || '';
           
           if (label.toLowerCase().includes('audio track') || 
-              label.includes('音轨') || // Chinese Simplified
-              label.includes('音軌') || // Chinese Traditional
-              label.includes('音声トラック') || // Japanese
-              label.includes('오디오')) {  // Korean
+              label.includes('音轨') ||
+              label.includes('音軌') ||
+              label.includes('音声トラック') ||
+              label.includes('오디오')) {
             
             foundAudioMenu = true;
             item.click();
@@ -356,12 +332,12 @@
             setTimeout(() => {
               clickOriginalIfNeeded();
               
-              // Always close menu to prevent mouse lock
               setTimeout(() => {
                 closeSettingsMenu();
                 isProcessing = false;
-              }, 300);
-            }, 200);
+                hasClickedOnce = true;
+              }, 400);
+            }, 400);
             
             break;
           }
@@ -370,28 +346,18 @@
         if (!foundAudioMenu) {
           closeSettingsMenu();
           isProcessing = false;
+          hasClickedOnce = true;
         }
-      }, 200);
+      }, 800);
 
     } catch (e) {
       console.log('[Stop YouTube Auto-Dubbing] Error:', e.message);
       closeSettingsMenu();
       isProcessing = false;
+      hasClickedOnce = true;
     }
   }
 
-  // Helper function for when menu is already open
-  function processAudioMenu() {
-    setTimeout(() => {
-      clickOriginalIfNeeded();
-      setTimeout(() => {
-        closeSettingsMenu();
-        isProcessing = false;
-      }, 300);
-    }, 200);
-  }
-
-  // Improved menu closing with fallback
   function closeSettingsMenu() {
     try {
       const settingsButton = document.querySelector('.ytp-settings-button');
@@ -401,32 +367,15 @@
           settingsButton.click();
         }
       }
-      
-      // Fallback: click outside menu
-      setTimeout(() => {
-        const panel = document.querySelector('.ytp-panel-menu');
-        if (panel && panel.style.display !== 'none') {
-          const player = document.querySelector('.html5-video-player');
-          if (player) {
-            const clickEvent = new MouseEvent('click', {
-              bubbles: true,
-              cancelable: true,
-              view: window
-            });
-            player.dispatchEvent(clickEvent);
-          }
-        }
-      }, 100);
-      
     } catch (e) {
-      console.log('[Stop YouTube Auto-Dubbing] Error closing menu:', e.message);
+      // Silent fail
     }
   }
 
   function clickOriginalIfNeeded() {
     try {
       const menuItems = document.querySelectorAll('.ytp-menuitem');
-      if (menuItems.length === 0) return;
+      if (menuItems.length === 0) return false;
 
       for (const item of menuItems) {
         const label = item.getAttribute('aria-label') || item.textContent || '';
@@ -434,16 +383,15 @@
 
         const isOriginal = 
           label.toLowerCase().includes('original') ||
-          label.includes('オリジナル') || // Japanese
-          label.includes('原文') ||  // Chinese Traditional
-          label.includes('原声') ||  // Chinese Traditional 2
-          label.includes('原始') ||  // Chinese Simplified
-          label.includes('원본');  // Korean
+          label.includes('オリジナル') ||
+          label.includes('原文') ||
+          label.includes('原声') ||
+          label.includes('原始') ||
+          label.includes('원본');
 
         if (isOriginal && !selected) {
           console.log('[Stop YouTube Auto-Dubbing] ✓ Switched to original audio');
           item.click();
-          hasClickedOnce = true;
           return true;
         }
       }
@@ -451,7 +399,6 @@
       return false;
       
     } catch (e) {
-      console.log('[Stop YouTube Auto-Dubbing] Error:', e.message);
       return false;
     }
   }
