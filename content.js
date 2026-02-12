@@ -1,292 +1,307 @@
-// Prevents auto-dubbing and restores original titles/descriptions
+// Stop YouTube Auto-Dubbing - v1.1.1
 (function() {
   'use strict';
 
-  // Prevent multiple instances
-  if (window.__stopYTAutoDubbing) {
-    console.log('[Stop YouTube Auto-Dubbing] Already running, skipping');
-    return;
-  }
+  if (window.__stopYTAutoDubbing) return;
   window.__stopYTAutoDubbing = true;
 
-  console.log('[Stop YouTube Auto-Dubbing] Extension loaded');
+  console.log('[Stop YouTube Auto-Dubbing] v1.1.1 loaded');
 
-  // State
   let isEnabled = true;
-  let monitoringInterval = null;
-  let lastCheckedVideoId = null;
+  let cookieSet = false;
+  let hasClickedOnce = false;
+  let lastVideoId = null;
 
-  // Initialize
   function init() {
-    // Load settings from storage
-    try {
-      chrome.storage.sync.get(['enabled'], function(result) {
-        if (chrome.runtime.lastError) {
-          console.log('[Stop YouTube Auto-Dubbing] Storage error:', chrome.runtime.lastError.message);
-          isEnabled = true; // Default to enabled
-        } else {
-          isEnabled = result.enabled !== false;
-        }
-        console.log('[Stop YouTube Auto-Dubbing] Extension enabled:', isEnabled);
+    chrome.storage.sync.get(['enabled'], function(result) {
+      isEnabled = result.enabled !== false;
+      
+      if (isEnabled) {
+        setPreferenceCookie();
+        setupNavigationListener();
+        setupAudioMonitor();
+        
+        // Auto-click original audio
+        setTimeout(autoClickOriginalAudio, 2000);
+        
+        // Fix metadata
+        setTimeout(fixMetadata, 1500);
+      }
+    });
+
+    chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+      if (request.action === 'toggleEnabled') {
+        isEnabled = request.enabled;
         
         if (isEnabled) {
-          startMonitoring();
+          setPreferenceCookie();
+          setTimeout(autoClickOriginalAudio, 1000);
+          setTimeout(fixMetadata, 500);
         }
-      });
+        
+        sendResponse({ success: true });
+      }
+      return true;
+    });
+  }
+
+  function setPreferenceCookie() {
+    if (cookieSet) return;
+    cookieSet = true;
+
+    try {
+      document.cookie = "PREF=hl=en&gl=US&f6=400; domain=.youtube.com; path=/; max-age=31536000";
     } catch (e) {
-      console.log('[Stop YouTube Auto-Dubbing] Init error:', e.message);
-      isEnabled = true;
-      startMonitoring();
-    }
-
-    // Setup message listener
-    setupMessageListener();
-    
-    // Setup navigation observer
-    setupNavigationObserver();
-  }
-
-  // Start monitoring videos
-  function startMonitoring() {
-    if (monitoringInterval) {
-      return; // Already monitoring
-    }
-
-    console.log('[Stop YouTube Auto-Dubbing] Starting video monitoring');
-    
-    // Check immediately
-    checkCurrentVideo();
-    
-    // Then check every 2 seconds
-    monitoringInterval = setInterval(checkCurrentVideo, 2000);
-  }
-
-  // Stop monitoring
-  function stopMonitoring() {
-    if (monitoringInterval) {
-      clearInterval(monitoringInterval);
-      monitoringInterval = null;
-      console.log('[Stop YouTube Auto-Dubbing] Stopped monitoring');
+      console.log('[Stop YouTube Auto-Dubbing] Error setting cookie:', e.message);
     }
   }
 
-  // Check and fix current video
-  function checkCurrentVideo() {
-    if (!isEnabled) return;
-    
-    // Only process on watch pages
-    if (!location.pathname.startsWith('/watch')) return;
-    
-    // Get video ID
-    const videoId = getVideoId();
-    if (!videoId) return;
-    
-    // Track if this is a new video
-    const isNewVideo = (videoId !== lastCheckedVideoId);
-    if (isNewVideo) {
-      lastCheckedVideoId = videoId;
-      console.log('[Stop YouTube Auto-Dubbing] New video:', videoId);
-    }
-    
-    // Fix audio track
-    fixAudioTrack();
-    
-    // Fix metadata on new videos
-    if (isNewVideo) {
-      // Try multiple times as page loads
-      setTimeout(() => fixMetadata(), 500);
-      setTimeout(() => fixMetadata(), 1500);
-      setTimeout(() => fixMetadata(), 3000);
-    }
+  function setupNavigationListener() {
+    document.addEventListener('yt-navigate-finish', function() {
+      if (!isEnabled) return;
+      
+      hasClickedOnce = false;
+      lastVideoId = null;
+      setPreferenceCookie();
+      
+      setTimeout(autoClickOriginalAudio, 2000);
+      setTimeout(fixMetadata, 1500);
+    });
   }
 
-  // Get current video ID
+  function setupAudioMonitor() {
+    document.addEventListener('yt-popup-opened', function() {
+      if (!isEnabled) return;
+      setTimeout(clickOriginalIfNeeded, 100);
+    });
+  }
+
+  // Get video ID from both /watch and /shorts URLs
   function getVideoId() {
-    try {
-      const params = new URLSearchParams(location.search);
-      return params.get('v');
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // Fix audio track to original
-  function fixAudioTrack() {
-    try {
-      const video = document.querySelector('video');
-      if (!video) return;
-      
-      const tracks = video.audioTracks;
-      if (!tracks || tracks.length <= 1) return;
-      
-      // Check if first track is enabled
-      if (tracks[0].enabled) return;
-      
-      // Switch to first track (original)
-      console.log('[Stop YouTube Auto-Dubbing] Switching to original audio (track 0)');
-      tracks[0].enabled = true;
-      
-      // Disable other tracks
-      for (let i = 1; i < tracks.length; i++) {
-        tracks[i].enabled = false;
-      }
-    } catch (e) {
-      // Silent - audio tracks API may not be available
-    }
-  }
-
-  // Fix video metadata
-  function fixMetadata() {
-    const metadata = getOriginalMetadata();
-    if (!metadata) return;
+    // For /watch?v=videoID
+    const urlParams = new URLSearchParams(location.search);
+    const watchId = urlParams.get('v');
+    if (watchId) return watchId;
     
-    if (metadata.title) {
-      setPageTitle(metadata.title);
-    }
+    // For /shorts/videoID
+    const shortsMatch = location.pathname.match(/\/shorts\/([^/?]+)/);
+    if (shortsMatch) return shortsMatch[1];
     
-    if (metadata.description) {
-      setPageDescription(metadata.description);
-    }
-  }
-
-  // Get original metadata from page
-  function getOriginalMetadata() {
-    try {
-      // Try ytInitialPlayerResponse (most reliable)
-      if (typeof window.ytInitialPlayerResponse !== 'undefined') {
-        const player = window.ytInitialPlayerResponse;
-        if (player && player.videoDetails) {
-          return {
-            title: player.videoDetails.title,
-            description: player.videoDetails.shortDescription
-          };
-        }
-      }
-    } catch (e) {
-      // Silent
-    }
     return null;
   }
 
-  // Set page title
-  function setPageTitle(title) {
+  // Fix title and description by fetching original metadata
+  async function fixMetadata() {
+    const videoId = getVideoId();
+    if (!videoId || videoId === lastVideoId) return;
+    
+    lastVideoId = videoId;
+
     try {
-      // Update title elements
-      const titleSelectors = [
-        'h1.ytd-watch-metadata yt-formatted-string',
-        'h1 yt-formatted-string'
-      ];
-      
-      let updated = false;
-      titleSelectors.forEach(selector => {
-        const elements = document.querySelectorAll(selector);
-        elements.forEach(el => {
-          if (el.textContent !== title) {
-            el.textContent = title;
-            updated = true;
-          }
-        });
-      });
-      
-      // Update document title
-      if (document.title !== title + ' - YouTube') {
-        document.title = title + ' - YouTube';
-        updated = true;
-      }
-      
-      if (updated) {
-        console.log('[Stop YouTube Auto-Dubbing] Updated title');
+      // Try to get from ytInitialPlayerResponse first
+      if (window.ytInitialPlayerResponse?.videoDetails) {
+        const details = window.ytInitialPlayerResponse.videoDetails;
+        
+        // Check if it looks translated (all ASCII = probably translated)
+        const title = details.title;
+        const isLikelyTranslated = /^[\x00-\x7F]*$/.test(title);
+        
+        if (isLikelyTranslated) {
+          await fetchOriginalMetadata(videoId);
+        } else {
+          applyMetadata(title, details.shortDescription);
+        }
+      } else {
+        await fetchOriginalMetadata(videoId);
       }
     } catch (e) {
-      // Silent
+      console.log('[Stop YouTube Auto-Dubbing] Error fixing metadata:', e.message);
     }
   }
 
-  // Set page description
-  function setPageDescription(description) {
+  // Fetch original metadata from YouTube API
+  async function fetchOriginalMetadata(videoId) {
     try {
+      // Extract API key from page
+      const scriptText = document.documentElement.innerHTML;
+      const apiKeyMatch = scriptText.match(/"INNERTUBE_API_KEY":"([^"]+)"/);
+      
+      if (!apiKeyMatch) return;
+
+      const apiKey = apiKeyMatch[1];
+
+      // Fetch with original language context (no translation)
+      const response = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${apiKey}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          videoId: videoId,
+          context: {
+            client: {
+              clientName: 'WEB',
+              clientVersion: '2.20240208.00.00'
+            }
+          }
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.videoDetails) {
+        const title = data.videoDetails.title;
+        const description = data.videoDetails.shortDescription;
+        
+        console.log('[Stop YouTube Auto-Dubbing] ✓ Restored original title');
+        applyMetadata(title, description);
+      }
+    } catch (e) {
+      console.log('[Stop YouTube Auto-Dubbing] Error fetching metadata:', e.message);
+    }
+  }
+
+  // Apply title and description to DOM
+  function applyMetadata(title, description) {
+    if (!title) return;
+
+    // Fix title
+    const titleSelectors = [
+      'h1.ytd-watch-metadata yt-formatted-string',
+      'h1.ytd-video-primary-info-renderer yt-formatted-string',
+      'yt-formatted-string.ytd-watch-metadata'
+    ];
+
+    titleSelectors.forEach(selector => {
+      const elements = document.querySelectorAll(selector);
+      elements.forEach(el => {
+        if (el.textContent !== title) {
+          el.textContent = title;
+        }
+      });
+    });
+
+    // Fix page title
+    if (document.title.endsWith(' - YouTube')) {
+      document.title = title + ' - YouTube';
+    }
+
+    // Fix description
+    if (description) {
       const descSelectors = [
         '#description-inline-expander yt-formatted-string',
-        'ytd-text-inline-expander yt-formatted-string'
+        'ytd-text-inline-expander yt-formatted-string',
+        '#description yt-formatted-string'
       ];
-      
-      let updated = false;
+
       descSelectors.forEach(selector => {
         const elements = document.querySelectorAll(selector);
         elements.forEach(el => {
           if (el.textContent !== description) {
             el.textContent = description;
-            updated = true;
           }
         });
       });
-      
-      if (updated) {
-        console.log('[Stop YouTube Auto-Dubbing] Updated description');
-      }
-    } catch (e) {
-      // Silent
     }
   }
 
-  // Setup message listener for popup
-  function setupMessageListener() {
+  // Auto-click settings menu to change audio
+  function autoClickOriginalAudio() {
+    if (!isEnabled || hasClickedOnce) return;
+
     try {
-      chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-        console.log('[Stop YouTube Auto-Dubbing] Message received:', request);
-        
-        if (request.action === 'toggleEnabled') {
-          isEnabled = request.enabled;
-          console.log('[Stop YouTube Auto-Dubbing] Toggled to:', isEnabled);
+      const settingsButton = document.querySelector('.ytp-settings-button');
+      if (!settingsButton) return;
+
+      settingsButton.click();
+
+      setTimeout(() => {
+        const menuItems = document.querySelectorAll('.ytp-menuitem');
+        let foundAudioMenu = false;
+
+        for (const item of menuItems) {
+          const label = item.textContent || '';
           
-          if (isEnabled) {
-            startMonitoring();
-            checkCurrentVideo();
-          } else {
-            stopMonitoring();
+          // Check for "Audio track" in multiple languages
+          if (label.toLowerCase().includes('audio track') || 
+              label.includes('音轨') ||  // Chinese Simplified
+              label.includes('音軌') ||  // Chinese Traditional
+              label.includes('音声トラック') ||  // Japanese
+              label.includes('오디오')) {  // Korean
+            
+            foundAudioMenu = true;
+            item.click();
+            
+            setTimeout(() => {
+              clickOriginalIfNeeded();
+              
+              setTimeout(() => {
+                const settingsButton = document.querySelector('.ytp-settings-button');
+                if (settingsButton) {
+                  settingsButton.click();
+                }
+              }, 300);
+            }, 200);
+            
+            break;
           }
-          
-          sendResponse({ success: true, enabled: isEnabled });
         }
-        
-        return true; // Keep channel open
-      });
+
+        // If no audio track menu found, close the settings menu
+        if (!foundAudioMenu) {
+          setTimeout(() => {
+            const settingsButton = document.querySelector('.ytp-settings-button');
+            if (settingsButton) {
+              settingsButton.click();
+            }
+          }, 100);
+        }
+      }, 200);
+
     } catch (e) {
-      console.log('[Stop YouTube Auto-Dubbing] Message listener error:', e.message);
+      console.log('[Stop YouTube Auto-Dubbing] Error:', e.message);
     }
   }
 
-  // Setup navigation observer for YouTube SPA
-  function setupNavigationObserver() {
-    let lastUrl = location.href;
-    
-    // Use mutation observer to detect URL changes
-    const observer = new MutationObserver(function() {
-      const currentUrl = location.href;
-      if (currentUrl !== lastUrl) {
-        lastUrl = currentUrl;
-        lastCheckedVideoId = null; // Reset on navigation
-        console.log('[Stop YouTube Auto-Dubbing] Page navigated');
-        
-        if (isEnabled) {
-          setTimeout(() => checkCurrentVideo(), 500);
+  function clickOriginalIfNeeded() {
+    try {
+      const menuItems = document.querySelectorAll('.ytp-menuitem');
+      if (menuItems.length === 0) return;
+
+      for (const item of menuItems) {
+        const label = item.getAttribute('aria-label') || item.textContent || '';
+        const selected = item.classList.contains('ytp-menuitem-selected');
+
+        // Check for original audio - correct translations
+        const isOriginal = 
+          label.toLowerCase().includes('original') ||
+          label.includes('オリジナル') || // Japanese
+          label.includes('原文') ||  // Chinese Traditional
+          label.includes('原聲') ||  // Chinese Traditional 2
+          label.includes('原始') ||  // Chinese Simplified
+          label.includes('원본');  // Korean
+
+        if (isOriginal && !selected) {
+          console.log('[Stop YouTube Auto-Dubbing] ✓ Switched to original audio');
+          item.click();
+          hasClickedOnce = true;
+          return true;
         }
       }
-    });
-    
-    // Observe document for changes
-    observer.observe(document.documentElement, {
-      childList: true,
-      subtree: true
-    });
+
+      return false;
+      
+    } catch (e) {
+      console.log('[Stop YouTube Auto-Dubbing] Error:', e.message);
+      return false;
+    }
   }
 
-  // Start the extension
-  // Use setTimeout to ensure page is ready
+  // Initialize
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {
-    setTimeout(init, 100);
+    init();
   }
 
 })();
