@@ -43,12 +43,11 @@ This happens automatically 3 seconds after each video loads.
 
 ### Title & Description Restoration
 
-The extension **extracts original metadata from the page and YouTube's API**, then actively maintains it:
+The extension **fetches original metadata from YouTube's internal API**, then actively maintains it:
 
-1. **Title**: Extracted instantly from schema.org meta tags already present in the page
-2. **Description**: Fetched from YouTube's internal API for complete text (schema.org descriptions are truncated)
-3. Replaces translated content in the DOM with original language content
-4. **Actively monitors the page** with MutationObserver to prevent YouTube from reverting changes on hover or interaction
+1. **Title & Description**: Fetched from YouTube's internal API for complete, accurate original content
+2. Replaces translated content in the DOM with original language content
+3. **Actively monitors the page** with MutationObserver to prevent YouTube from reverting changes on hover or interaction
 
 This ensures the original title and description stay visible even when YouTube's reactive framework tries to re-apply translations.
 
@@ -135,10 +134,11 @@ stop-youtube-auto-dubbing/
 
 ## Version
 
-1.1.3
+1.1.4
 
 ## Changelog
 
+- **1.1.4**: Fixed title not showing when navigating between videos
 - **1.1.3**: Fixed audio track switching issue
 - **1.1.2**: Fixed dark mode switching bug; Fixed mouse locking issue; Added processing lock to prevent race conditions; Fixed description persistence; Improved metadata fetching; Enhanced reliability with proper event-driven architecture
 - **1.1.1**: Complete rewrite; Auto-clicks settings menu to select original audio; Fetches and restores original title/description from YouTube API; Multi-language support (EN, JP, CN, KR)

@@ -1,4 +1,4 @@
-// Stop YouTube Auto-Dubbing - v1.1.3
+// Stop YouTube Auto-Dubbing - v1.1.4
 (function() {
   'use strict';
 
@@ -87,6 +87,11 @@
         descriptionObserver = null;
       }
       
+      if (titleObserver) {
+        titleObserver.disconnect();
+        titleObserver = null;
+      }
+      
       setPreferenceCookie();
       
       setTimeout(autoClickOriginalAudio, 3000);
@@ -96,20 +101,27 @@
   }
 
   function waitForPlayerResponse(attempts = 0) {
-    const maxAttempts = 6;
+    const maxAttempts = 15;
     
     if (attempts >= maxAttempts) {
-      fixMetadata();
       return;
     }
     
-    const hasSchema = document.querySelector('meta[itemprop="name"]');
+    const currentVideoId = getVideoId();
     
-    if (hasSchema) {
-      fixMetadata();
-    } else {
-      setTimeout(() => waitForPlayerResponse(attempts + 1), 500);
+    // Make sure we have a valid video ID and it's different from last one
+    if (!currentVideoId) {
+      setTimeout(() => waitForPlayerResponse(attempts + 1), 300);
+      return;
     }
+    
+    // Wait a bit for the page to settle after navigation
+    if (attempts < 2) {
+      setTimeout(() => waitForPlayerResponse(attempts + 1), 300);
+      return;
+    }
+    
+    fixMetadata();
   }
 
   function setupAudioMonitor() {
@@ -130,23 +142,6 @@
     return null;
   }
 
-  function getSchemaMetadata() {
-    try {
-      const titleMeta = document.querySelector('meta[itemprop="name"]');
-      const descMeta = document.querySelector('meta[itemprop="description"]');
-      
-      if (titleMeta || descMeta) {
-        return {
-          title: titleMeta?.content || null,
-          description: descMeta?.content || null
-        };
-      }
-    } catch (e) {
-      console.log('[Stop YouTube Auto-Dubbing] Error reading schema.org:', e.message);
-    }
-    return null;
-  }
-
   async function fixMetadata() {
     const videoId = getVideoId();
     
@@ -155,17 +150,6 @@
     lastVideoId = videoId;
 
     try {
-      const schemaData = getSchemaMetadata();
-      const schemaTitle = schemaData?.title;
-      
-      if (schemaTitle) {
-        applyMetadata(schemaTitle, null);
-        
-        if (window.ytInitialPlayerResponse?.videoDetails) {
-          window.ytInitialPlayerResponse.videoDetails.title = schemaTitle;
-        }
-      }
-      
       const original = await fetchOriginalMetadata(videoId);
       
       if (original) {
@@ -176,8 +160,6 @@
         
         applyMetadata(original.title, original.description);
         console.log('[Stop YouTube Auto-Dubbing] ✓ Restored original metadata');
-      } else if (schemaTitle) {
-        applyMetadata(schemaTitle, null);
       }
     } catch (e) {
       console.log('[Stop YouTube Auto-Dubbing] Error fixing metadata:', e.message);
@@ -234,17 +216,45 @@
     if (title) originalTitle = title;
     if (description) originalDescription = description;
 
+    // Apply title with retry logic
+    applyTitle(title);
+
+    if (description) {
+      updateDescriptionText(description);
+    }
+    
+    startDescriptionObserver();
+    startTitleObserver();
+  }
+
+  function applyTitle(title, attempt = 0) {
+    const maxAttempts = 15;
+    
     const titleSelectors = [
       'h1.ytd-watch-metadata yt-formatted-string',
       'h1.ytd-video-primary-info-renderer yt-formatted-string',
       'yt-formatted-string.ytd-watch-metadata'
     ];
 
+    let applied = false;
+    let needsRetry = false;
+    
     titleSelectors.forEach(selector => {
       const elements = document.querySelectorAll(selector);
+      if (elements.length === 0) {
+        needsRetry = true;
+      }
       elements.forEach(el => {
-        if (el.textContent !== title) {
+        // Remove is-empty attribute if present
+        if (el.hasAttribute('is-empty')) {
+          el.removeAttribute('is-empty');
+        }
+        
+        // Check if title is empty or different from what we want
+        const currentText = el.textContent || '';
+        if (currentText.trim() === '' || currentText !== title) {
           el.textContent = title;
+          applied = true;
         }
       });
     });
@@ -253,11 +263,10 @@
       document.title = title + ' - YouTube';
     }
 
-    if (description) {
-      updateDescriptionText(description);
+    // Retry if no elements found or still need to apply
+    if (needsRetry && attempt < maxAttempts) {
+      setTimeout(() => applyTitle(title, attempt + 1), 200);
     }
-    
-    startDescriptionObserver();
   }
 
   function updateDescriptionText(description) {
@@ -274,6 +283,7 @@
   }
 
   let descriptionObserver = null;
+  let titleObserver = null;
 
   function startDescriptionObserver() {
     if (descriptionObserver) {
@@ -295,6 +305,47 @@
       childList: true,
       subtree: true,
       characterData: true
+    });
+  }
+
+  function startTitleObserver() {
+    if (titleObserver) {
+      titleObserver.disconnect();
+    }
+
+    if (!originalTitle) return;
+
+    const titleContainer = document.querySelector('h1.ytd-watch-metadata');
+    if (!titleContainer) {
+      // Retry if container doesn't exist yet
+      setTimeout(startTitleObserver, 300);
+      return;
+    }
+
+    titleObserver = new MutationObserver(() => {
+      if (originalTitle) {
+        const titleElement = titleContainer.querySelector('yt-formatted-string');
+        if (titleElement) {
+          // Remove is-empty attribute if YouTube adds it
+          if (titleElement.hasAttribute('is-empty')) {
+            titleElement.removeAttribute('is-empty');
+          }
+          
+          const currentText = titleElement.textContent || '';
+          // Fix if empty or different from original
+          if (currentText.trim() === '' || currentText !== originalTitle) {
+            titleElement.textContent = originalTitle;
+          }
+        }
+      }
+    });
+
+    titleObserver.observe(titleContainer, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['is-empty']
     });
   }
 
