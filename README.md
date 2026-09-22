@@ -39,13 +39,19 @@ The extension **automatically opens the YouTube settings menu** and clicks throu
 3. Selects the original audio (not auto-dubbed)
 4. Closes the menu automatically
 
-This happens automatically 3 seconds after each video loads.
+This happens automatically once the player is ready after each video loads.
+The menu is kept visually hidden while this runs, and the extension:
+
+- skips the whole procedure if the audio-track menu does not exist (single-track video)
+- skips it if the original track is already selected, so undubbed videos are never re-buffered
+- never touches the menu while you have it open yourself
+- restores keyboard focus to wherever it was
 
 ### Title & Description Restoration
 
 The extension **fetches original metadata from YouTube's internal API**, then actively maintains it:
 
-1. **Title & Description**: Fetched from YouTube's internal API for complete, accurate original content
+1. **Title & Description**: Fetched from YouTube's internal API for complete, accurate original content (schema.org meta tags are used as a fallback if the API call fails)
 2. Replaces translated content in the DOM with original language content
 3. **Actively monitors the page** with MutationObserver to prevent YouTube from reverting changes on hover or interaction
 
@@ -53,52 +59,55 @@ This ensures the original title and description stay visible even when YouTube's
 
 ## Supported Languages
 
-The extension currently supports audio track detection in:
+Audio track detection works with these YouTube interface languages:
+
 - English
-- Japanese (日本語)
 - Chinese Simplified (简体中文)
 - Chinese Traditional (繁體中文)
+- Japanese (日本語)
 - Korean (한국어)
+
+This is the language of your **YouTube interface**, not the language of the
+video. The video itself can be in any language.
 
 ### Adding Your Language
 
-If your YouTube interface is in a different language, you need to add translations in **TWO places** in `content.js`:
+All matching lives in two arrays at the top of `content.js`. Add your
+interface language's wording for "Audio track" and for "Original":
 
-**Place 1: "Audio track" menu detection**
-
-Find this section:
 ```javascript
-if (label.toLowerCase().includes('audio track') || 
-    label.includes('音轨') ||  // Chinese Simplified
-    label.includes('音軌') ||  // Chinese Traditional
-    label.includes('音声トラック') ||  // Japanese
-    label.includes('오디오')) {  // Korean
+const AUDIO_TRACK_LABELS = [
+  'audio track',      // English
+  '音轨',              // Chinese Simplified
+  '音軌',              // Chinese Traditional
+  '音声トラック',       // Japanese
+  '오디오',             // Korean
+  'your_translation'  // <- add yours here
+];
+
+const ORIGINAL_LABELS = [
+  'original',         // English
+  '原始',              // Chinese Simplified
+  '原声',              // Chinese Simplified
+  '原文',              // Chinese Traditional
+  '原聲',              // Chinese Traditional
+  'オリジナル',         // Japanese
+  '원본',               // Korean
+  'your_translation'  // <- add yours here
+];
 ```
 
-Add a new line with your language's translation of "Audio track", for example:
-```javascript
-    label.includes('votre_traduction')) {  // Your Language
-```
+To find the exact wording, open a video, click the gear icon, and read the row
+above "Quality" (that is your "Audio track" text). Open that row and read the
+entry marked as the source audio (that is your "Original" text).
 
-**Place 2: "Original" audio detection**
+Notes:
 
-Find this section:
-```javascript
-const isOriginal = 
-  label.toLowerCase().includes('original') ||
-  label.includes('オリジナル') || // Japanese
-  label.includes('原文') ||  // Chinese Traditional
-  label.includes('原声') ||  // Chinese Traditional 2
-  label.includes('原始') ||  // Chinese Simplified
-  label.includes('원본');  // Korean
-```
-
-Add a new line with your language's translation of "original", for example:
-```javascript
-  label.includes('votre_traduction');  // Your Language
-```
-
-After adding your language, reload the extension and test!
+- Matching is case-insensitive and by substring, so a word stem such as
+  `'oryginaln'` covers all its inflected forms.
+- Save `content.js` as **UTF-8**, or the non-Latin entries will be corrupted
+  and silently stop matching.
+- Reload the extension at `chrome://extensions/` and refresh YouTube to test.
 
 ## File Structure
 
@@ -134,10 +143,11 @@ stop-youtube-auto-dubbing/
 
 ## Version
 
-1.1.4
+1.1.5
 
 ## Changelog
 
+- **1.1.5**: No longer closes other YouTube popups such as the account menu; No longer re-selects an audio track that is already active, which restarted undubbed videos; Settings menu is hidden while switching; Retries while the player loads instead of giving up; Focus, title selector and PREF cookie fixes
 - **1.1.4**: Fixed title not showing when navigating between videos
 - **1.1.3**: Fixed audio track switching issue
 - **1.1.2**: Fixed dark mode switching bug; Fixed mouse locking issue; Added processing lock to prevent race conditions; Fixed description persistence; Improved metadata fetching; Enhanced reliability with proper event-driven architecture

@@ -63,20 +63,30 @@ toggleSwitch.addEventListener('click', function() {
       }
       
       console.log('[Popup] Found', tabs.length, 'YouTube tabs');
+      let done = 0;
       let notified = 0;
-      
+
       tabs.forEach(function(tab) {
         chrome.tabs.sendMessage(
           tab.id,
           { action: 'toggleEnabled', enabled: newState },
           function(response) {
+            done++;
             if (chrome.runtime.lastError) {
               console.log('[Popup] Tab', tab.id, 'not ready:', chrome.runtime.lastError.message);
             } else {
               notified++;
               console.log('[Popup] Tab', tab.id, 'notified successfully');
-              if (notified === tabs.length) {
-                setStatus(newState ? 'ON - Refresh YouTube' : 'OFF - Refresh YouTube', 'success');
+            }
+
+            // Report once every tab has answered, not only when all succeed.
+            if (done === tabs.length) {
+              if (!newState) {
+                setStatus('OFF - Refresh YouTube to restore translations', 'success');
+              } else if (notified > 0) {
+                setStatus('ON - Applied to open YouTube tabs', 'success');
+              } else {
+                setStatus('ON - Refresh YouTube to activate', 'success');
               }
             }
           }

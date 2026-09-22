@@ -1,25 +1,25 @@
 {
   "manifest_version": 3,
   "name": "Stop YouTube Auto-Dubbing",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Prevents YouTube from auto-dubbing videos and auto-translating titles/descriptions",
-  
   "permissions": [
     "storage"
   ],
-  
   "host_permissions": [
     "*://*.youtube.com/*"
   ],
-  
   "content_scripts": [
     {
-      "matches": ["*://*.youtube.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_start"
     }
   ],
-  
   "action": {
     "default_popup": "popup.html",
     "default_title": "Stop YouTube Auto-Dubbing",
@@ -27,11 +27,9 @@
       "128": "icon128.png"
     }
   },
-  
   "icons": {
     "128": "icon128.png"
   },
-  
   "browser_specific_settings": {
     "gecko": {
       "id": "stop-youtube-auto-dubbing@extension",
