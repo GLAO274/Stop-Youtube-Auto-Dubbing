@@ -1,4 +1,4 @@
-// Stop YouTube Auto-Dubbing - v1.1.5
+// Stop YouTube Auto-Dubbing - v1.1.6
 (function () {
   'use strict';
 
@@ -38,10 +38,22 @@
     'ytd-reel-video-renderer[is-active] yt-shorts-video-title-view-model h2 span'
   ];
 
-  const DESC_SELECTORS = [
-    '#description-inline-expander #attributed-snippet-text .yt-core-attributed-string',
+  // The collapsed snippet and the expanded body are separate nodes and must be
+  // written differently: the snippet is a preview, the expanded one is the
+  // whole description.
+  const DESC_COLLAPSED_SELECTORS = [
+    '#description-inline-expander #attributed-snippet-text .yt-core-attributed-string'
+  ];
+
+  const DESC_EXPANDED_SELECTORS = [
     '#description-inline-expander #expanded yt-attributed-string .yt-core-attributed-string'
   ];
+
+  // Cap for the collapsed preview. YouTube normally clamps this box with CSS,
+  // but that is not guaranteed on every layout, so cap it ourselves rather than
+  // risk dumping a whole description into the collapsed view.
+  // Set to 0 to write the full text and let YouTube's clamp handle it.
+  const COLLAPSED_CHAR_LIMIT = 250;
 
   // ---------------------------------------------------------------------------
   // State
@@ -57,6 +69,7 @@
   let currentVideoId = null;
   let originalTitle = null;
   let originalDescription = null;
+  let descriptionIsPartial = false;
   let metaObserver = null;
   let applying = false;
   let reapplyQueued = false;
@@ -374,6 +387,17 @@
     return null;
   }
 
+  function collapsedText(description) {
+    if (!COLLAPSED_CHAR_LIMIT || description.length <= COLLAPSED_CHAR_LIMIT) {
+      return description;
+    }
+    const cut = description.slice(0, COLLAPSED_CHAR_LIMIT);
+    const space = cut.lastIndexOf(' ');
+    // Break on a word boundary when there is one; scripts without spaces
+    // (Chinese, Japanese) fall back to a hard cut.
+    return space > COLLAPSED_CHAR_LIMIT * 0.6 ? cut.slice(0, space) : cut;
+  }
+
   function writeText(el, text) {
     if (!el || !text) return;
     // YouTube marks a not-yet-populated node with is-empty, which hides it
@@ -405,11 +429,23 @@
       }
 
       if (originalDescription) {
-        DESC_SELECTORS.forEach(function (sel) {
+        const preview = collapsedText(originalDescription);
+        DESC_COLLAPSED_SELECTORS.forEach(function (sel) {
           document.querySelectorAll(sel).forEach(function (el) {
-            writeText(el, originalDescription);
+            writeText(el, preview);
           });
         });
+
+        // A schema.org description is itself truncated, so never write it into
+        // the expanded view - a cut-off original reads worse than YouTube's
+        // complete translation.
+        if (!descriptionIsPartial) {
+          DESC_EXPANDED_SELECTORS.forEach(function (sel) {
+            document.querySelectorAll(sel).forEach(function (el) {
+              writeText(el, originalDescription);
+            });
+          });
+        }
       }
     } catch (e) {
       log('apply error', e.message);
@@ -428,8 +464,10 @@
     attempt = attempt || 0;
     if (myGen !== gen || !isEnabled) return;
 
-    const titleFound = applyNow();
-    if (titleFound) startMetaObserver();
+    applyNow();
+    // Start regardless of the title: a video can have a description to hold in
+    // place even if the title node has not been stamped yet.
+    startMetaObserver();
 
     if (attempt < 15) {
       later(function () { applyWithRetry(myGen, attempt + 1); }, 200);
@@ -493,7 +531,10 @@
       const schema = getSchemaMetadata();
       if (schema) {
         if (!title) title = schema.title;
-        if (!description) description = schema.description;
+        if (!description && schema.description) {
+          description = schema.description;
+          descriptionIsPartial = true;
+        }
       }
     }
 
@@ -533,6 +574,7 @@
     currentVideoId = null;
     originalTitle = null;
     originalDescription = null;
+    descriptionIsPartial = false;
     applying = false;
     const player = getPlayer();
     if (player) player.classList.remove(HIDE_CLASS);

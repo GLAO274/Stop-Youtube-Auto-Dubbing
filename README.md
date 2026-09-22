@@ -143,11 +143,12 @@ stop-youtube-auto-dubbing/
 
 ## Version
 
-1.1.5
+1.1.6
 
 ## Changelog
 
-- **1.1.5**: No longer closes other YouTube popups such as the account menu; No longer re-selects an audio track that is already active, which restarted undubbed videos; Settings menu is hidden while switching; Retries while the player loads instead of giving up; Focus, title selector and PREF cookie fixes
+- **1.1.6**: Fixed overfilled description preview; Fixed description restoration
+- **1.1.5**: Fixed closing other YouTube popups; Fixed undubbed videos restarting; Hide settings menu while switching
 - **1.1.4**: Fixed title not showing when navigating between videos
 - **1.1.3**: Fixed audio track switching issue
 - **1.1.2**: Fixed dark mode switching bug; Fixed mouse locking issue; Added processing lock to prevent race conditions; Fixed description persistence; Improved metadata fetching; Enhanced reliability with proper event-driven architecture
